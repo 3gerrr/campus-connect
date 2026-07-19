@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Campus Connect",
+    "slug": "campus-connect",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "plugins": [
+      "expo-camera",
+      "expo-local-authentication",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#E4002B"
+        }
+      ]
+    ],
+    "ios": {
+      "bundleIdentifier": "com.yourorg.campusconnect",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Use Face ID to quickly and securely log in.",
+        "NSCameraUsageDescription": "Used to capture verification documents for representative approval."
+      }
+    },
+    "android": {
+      "package": "com.yourorg.campusconnect",
+      "permissions": ["CAMERA", "USE_BIOMETRIC", "USE_FINGERPRINT", "POST_NOTIFICATIONS"]
+    }
+  }
+}

@@ -1,0 +1,522 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// ACCOUNT-LEVEL ROLE
+// Deliberately coarse. This is account TYPE, not privilege scope.
+// A STUDENT can also be a course Representative or hold a LeadershipRole --
+// those are separate scoped grants below, not alternate values of this enum.
+// Keeping this flat avoids building a role-inheritance graph we'd have to
+// debug for months; scoped privilege is looked up per-request instead.
+// ---------------------------------------------------------------------------
+enum Role {
+  SUPER_ADMIN        // Anthropic-style platform operator, not university staff
+  UNIVERSITY_ADMIN    // verifies lecturers, manages institution structure
+  LECTURER
+  STUDENT
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REVOKED
+}
+
+enum RepresentativeType {
+  PRIMARY
+  ASSISTANT
+}
+
+enum LeadershipRoleType {
+  DEPARTMENT_PRESIDENT
+  FACULTY_PRESIDENT
+  STUDENT_UNION
+}
+
+enum ScopeType {
+  COURSE_OFFERING
+  DEPARTMENT
+  FACULTY
+  UNIVERSITY
+}
+
+enum PermissionAction {
+  POST_ANNOUNCEMENT
+  APPROVE_REPRESENTATIVE
+  MANAGE_COURSE_OFFERING
+  MANAGE_DEPARTMENT
+  MANAGE_FACULTY
+  VERIFY_LECTURER
+  VIEW_ANALYTICS
+}
+
+enum EnrollmentStatus {
+  ENROLLED
+  DROPPED
+  COMPLETED
+}
+
+enum AnnouncementCategory {
+  CLASS_STARTED
+  VENUE_CHANGE
+  CANCELLATION
+  ASSIGNMENT
+  EXAM
+  REMINDER
+  EMERGENCY
+  GENERAL
+}
+
+// ---------------------------------------------------------------------------
+// INSTITUTION HIERARCHY
+// University -> Campus -> Faculty -> Department -> Course -> CourseOffering
+// ---------------------------------------------------------------------------
+
+model University {
+  id        String   @id @default(uuid())
+  name      String
+  domain    String   @unique // for email-based org verification, e.g. "unilag.edu.ng"
+  createdAt DateTime @default(now())
+
+  campuses        Campus[]
+  faculties       Faculty[]
+  users           User[]
+  academicSessions AcademicSession[]
+  auditLogs       AuditLog[]
+}
+
+model Campus {
+  id           String   @id @default(uuid())
+  name         String
+  universityId String
+  university   University @relation(fields: [universityId], references: [id])
+  createdAt    DateTime @default(now())
+
+  courseOfferings CourseOffering[]
+
+  @@index([universityId])
+}
+
+model Faculty {
+  id           String   @id @default(uuid())
+  name         String
+  universityId String
+  university   University @relation(fields: [universityId], references: [id])
+  createdAt    DateTime @default(now())
+
+  departments Department[]
+
+  @@index([universityId])
+}
+
+model Department {
+  id        String   @id @default(uuid())
+  name      String
+  facultyId String
+  faculty   Faculty  @relation(fields: [facultyId], references: [id])
+  createdAt DateTime @default(now())
+
+  courses Course[]
+
+  @@index([facultyId])
+}
+
+// The catalog entry -- "CSC301: Data Structures". Does not change per semester.
+model Course {
+  id           String   @id @default(uuid())
+  code         String   // "CSC301"
+  title        String   // "Data Structures"
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
+  createdAt    DateTime @default(now())
+
+  offerings CourseOffering[]
+
+  @@unique([departmentId, code])
+}
+
+// "Rain Semester 2026", "Fall 2026" etc. Course offerings hang off this.
+model AcademicSession {
+  id           String   @id @default(uuid())
+  name         String
+  universityId String
+  university   University @relation(fields: [universityId], references: [id])
+  startDate    DateTime
+  endDate      DateTime
+  createdAt    DateTime @default(now())
+
+  courseOfferings CourseOffering[]
+
+  @@index([universityId])
+}
+
+// The actual running instance a student enrolls in -- "CSC301, Rain 2026, Dr Bello"
+model CourseOffering {
+  id                String   @id @default(uuid())
+  courseId          String
+  course            Course   @relation(fields: [courseId], references: [id])
+  academicSessionId String
+  academicSession   AcademicSession @relation(fields: [academicSessionId], references: [id])
+  lecturerId        String
+  lecturer          User     @relation("LecturerOfferings", fields: [lecturerId], references: [id])
+  campusId          String?
+  campus            Campus?  @relation(fields: [campusId], references: [id])
+  createdAt         DateTime @default(now())
+
+  enrollments     Enrollment[]
+  representatives Representative[]
+  announcements   Announcement[]
+  notificationPreferences NotificationPreference[]
+  deadlines       Deadline[]
+
+  @@index([lecturerId])
+  @@index([courseId, academicSessionId])
+}
+
+// ---------------------------------------------------------------------------
+// USERS, ENROLLMENT, TRUST
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role
+  // Default lead time for deadline reminders, in minutes. Defaults to 60,
+  // not an arbitrary guess -- 58/124 (47%, the plurality) of surveyed
+  // students said "1 hour" was their preferred reminder lead time,
+  // ahead of 30 minutes (35%). Configurable per user since the next most
+  // common answer was still a substantial minority.
+  reminderLeadMinutes Int @default(60)
+  universityId String
+  university   University @relation(fields: [universityId], references: [id])
+  createdAt    DateTime @default(now())
+
+  // Lecturer verification -- must be verified by a University Admin before
+  // they can post announcements or approve representatives.
+  verified        Boolean   @default(false)
+  verifiedById    String?
+  verifiedBy      User?     @relation("VerifiedByAdmin", fields: [verifiedById], references: [id])
+  verifiedAt      DateTime?
+  verifiedUsers   User[]    @relation("VerifiedByAdmin")
+
+  lecturerOfferings CourseOffering[] @relation("LecturerOfferings")
+  enrollments       Enrollment[]
+  representativeOf  Representative[] @relation("RepUser")
+  repApprovalsGiven Representative[] @relation("ApprovedBy")
+  leadershipRoles   LeadershipRole[] @relation("LeadershipUser")
+  leadershipGranted LeadershipRole[] @relation("AppointedBy")
+  permissionGrants  PermissionGrant[] @relation("PermissionSubject")
+  permissionsGiven  PermissionGrant[] @relation("PermissionGrantedBy")
+  announcementsSent Announcement[]   @relation("AnnouncementSender")
+  announcementShares AnnouncementShare[]
+  auditActions      AuditLog[]       @relation("AuditActor")
+  sessions          Session[]
+  notificationPreferences NotificationPreference[]
+  deadlinesCreated  Deadline[] @relation("DeadlineCreatedBy")
+  remindersReceived SentReminder[]
+  readReceipts      AnnouncementReadReceipt[]
+
+  @@index([universityId])
+}
+
+// A student's registration for a specific course offering. Announcements
+// are only visible to / delivered to users with an ENROLLED row here --
+// this is what makes "only registered students see this" actually true.
+model Enrollment {
+  id               String   @id @default(uuid())
+  studentId        String
+  student          User     @relation(fields: [studentId], references: [id])
+  courseOfferingId String
+  courseOffering   CourseOffering @relation(fields: [courseOfferingId], references: [id])
+  status           EnrollmentStatus @default(ENROLLED)
+  createdAt        DateTime @default(now())
+
+  @@unique([studentId, courseOfferingId])
+  @@index([courseOfferingId])
+}
+
+// Representative privilege is scoped to ONE course offering, not a whole
+// department. Multiple reps per offering are allowed via `type`.
+model Representative {
+  id                 String             @id @default(uuid())
+  userId             String
+  user               User               @relation("RepUser", fields: [userId], references: [id])
+  courseOfferingId   String
+  courseOffering     CourseOffering     @relation(fields: [courseOfferingId], references: [id])
+  type               RepresentativeType @default(PRIMARY)
+  status             VerificationStatus @default(PENDING)
+  applicationNote     String?
+  supportingDocumentUrl String?         // optional evidence submitted with application
+  approvedById       String?
+  approvedBy         User?              @relation("ApprovedBy", fields: [approvedById], references: [id])
+  approvedAt         DateTime?
+  createdAt          DateTime           @default(now())
+
+  @@unique([userId, courseOfferingId])
+  @@index([courseOfferingId])
+}
+
+// Department President / Faculty President / Student Union -- scoped and
+// TERM-BOXED. An expired term should not carry privilege forward; checks
+// must compare against termEnd, not just role existence.
+model LeadershipRole {
+  id             String             @id @default(uuid())
+  userId         String
+  user           User               @relation("LeadershipUser", fields: [userId], references: [id])
+  type           LeadershipRoleType
+  scopeType      ScopeType          // DEPARTMENT, FACULTY, or UNIVERSITY
+  scopeId        String             // id of the Department/Faculty/University row
+  termStart      DateTime
+  termEnd        DateTime
+  appointedById  String
+  appointedBy    User               @relation("AppointedBy", fields: [appointedById], references: [id])
+  createdAt      DateTime           @default(now())
+
+  @@index([userId])
+  @@index([scopeType, scopeId])
+}
+
+// ---------------------------------------------------------------------------
+// FLAT SCOPED PERMISSIONS
+// Rather than a role-inheritance graph, every privileged action is an
+// explicit (subject, action, scopeType, scopeId) row. Harder to look elegant
+// on a whiteboard, much easier to audit and to reason about "why can this
+// user do this" -- it's always answerable by one query against this table.
+// ---------------------------------------------------------------------------
+model PermissionGrant {
+  id            String           @id @default(uuid())
+  subjectId     String
+  subject       User             @relation("PermissionSubject", fields: [subjectId], references: [id])
+  action        PermissionAction
+  scopeType     ScopeType
+  scopeId       String
+  grantedById   String
+  grantedBy     User             @relation("PermissionGrantedBy", fields: [grantedById], references: [id])
+  grantedAt     DateTime         @default(now())
+  revokedAt     DateTime?
+
+  @@index([subjectId, action])
+  @@index([scopeType, scopeId])
+}
+
+// ---------------------------------------------------------------------------
+// ANNOUNCEMENTS -- immutable, append-only, expiring, with attachments
+// ---------------------------------------------------------------------------
+
+model Announcement {
+  id               String   @id @default(uuid())
+  courseOfferingId String
+  courseOffering   CourseOffering @relation(fields: [courseOfferingId], references: [id])
+  senderId         String
+  sender           User     @relation("AnnouncementSender", fields: [senderId], references: [id])
+  category         AnnouncementCategory @default(GENERAL)
+  content          String
+  parentId         String?  // links to the original if this is a correction -- never an edit
+  expiresAt        DateTime? // e.g. "Venue change" for today's class need not show next month
+  createdAt        DateTime @default(now())
+
+  // --- Tamper-evident hash chain (per course offering) -------------------
+  // Same primitive as Certificate Transparency / Haber-Stornetta hash
+  // chains: each row's hash commits to the previous row's hash plus its
+  // own content, so altering or deleting any historical announcement --
+  // even with direct database access -- breaks the chain from that point
+  // forward in a way that's cheap to detect (see AnnouncementsService.verifyChain).
+  // `sequence` is per-course-offering (not global) and assigned inside a
+  // Postgres advisory-locked transaction to prevent two concurrent posts
+  // from forking the chain.
+  sequence     Int    @default(0)
+  previousHash String
+  contentHash  String @unique
+
+  attachments Attachment[]
+  shares      AnnouncementShare[]
+  readReceipts AnnouncementReadReceipt[]
+  deadlines   Deadline[]
+
+  @@unique([courseOfferingId, sequence])
+  @@index([courseOfferingId, createdAt])
+}
+
+model Attachment {
+  id             String   @id @default(uuid())
+  announcementId String
+  announcement   Announcement @relation(fields: [announcementId], references: [id])
+  url            String
+  fileName       String
+  fileType       String   // "pdf", "image", "link", "slides"
+  // Explicit ordering, not inferred from createdAt -- multiple attachments
+  // on the same announcement are created in one request and could share a
+  // timestamp down to the millisecond, which would make "the order they
+  // were submitted in" ambiguous. That ambiguity matters here because the
+  // hash chain needs to reconstruct the EXACT same byte sequence at
+  // verify-time as was hashed at write-time.
+  order          Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  @@index([announcementId])
+}
+
+// Representatives can amplify a lecturer's announcement to draw attention
+// (e.g. re-surface it, or forward to a wider list) WITHOUT creating a new
+// editable copy -- the content always resolves back to the original row.
+model AnnouncementShare {
+  id             String   @id @default(uuid())
+  announcementId String
+  announcement   Announcement @relation(fields: [announcementId], references: [id])
+  sharedById     String
+  sharedBy       User     @relation(fields: [sharedById], references: [id])
+  createdAt      DateTime @default(now())
+
+  @@index([announcementId])
+}
+
+model NotificationPreference {
+  id               String   @id @default(uuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id])
+  courseOfferingId String?  // null = applies to all courses
+  courseOffering   CourseOffering? @relation(fields: [courseOfferingId], references: [id])
+  category         AnnouncementCategory
+  enabled          Boolean  @default(true)
+
+  // NOTE: this constraint does NOT fully prevent duplicates when
+  // courseOfferingId is null -- Postgres treats NULL as distinct from
+  // other NULLs in a unique index, so multiple (userId, NULL, category)
+  // rows can coexist at the DB level. Application code (see
+  // NotificationPreferencesService.setPreference) handles the "applies to
+  // all courses" case with an explicit findFirst instead of relying on
+  // this index for that specific case.
+  @@unique([userId, courseOfferingId, category])
+}
+
+// ---------------------------------------------------------------------------
+// DEADLINES / SCHEDULED REMINDERS
+// This is the single most-requested capability in the founding user survey
+// (72% wanted class reminders, 70% assignment reminders, 69% exam
+// countdown -- the three highest-demand features of any surveyed) and,
+// until now, the one Campus Connect had nothing for: Announcements are
+// event-triggered (someone posts, it broadcasts), but nothing in the
+// system proactively told a student "this is coming up" ahead of time.
+// Deadline is deliberately separate from Announcement rather than another
+// field bolted onto it -- Announcements are an immutable, hash-chained
+// record of what was SAID; a Deadline is a schedulable thing to be
+// REMINDED about, and conflating the two would have forced awkward
+// choices (e.g. "editing" a deadline's time would look like tampering
+// with the trust chain, which it isn't).
+// ---------------------------------------------------------------------------
+model Deadline {
+  id               String   @id @default(uuid())
+  courseOfferingId String
+  courseOffering   CourseOffering @relation(fields: [courseOfferingId], references: [id])
+  title            String
+  category         AnnouncementCategory @default(REMINDER) // reuses the same enum as announcements for consistency
+  dueAt            DateTime
+  // Optional link back to the announcement that introduced this deadline
+  // (e.g. "Assignment 2 due Friday" posted as an announcement can also
+  // register a structured, reminder-worthy Deadline) -- not required,
+  // since lecturers should be able to set a deadline without necessarily
+  // broadcasting an announcement about it.
+  announcementId   String?
+  announcement     Announcement? @relation(fields: [announcementId], references: [id])
+  createdById      String
+  createdBy        User     @relation("DeadlineCreatedBy", fields: [createdById], references: [id])
+  createdAt        DateTime @default(now())
+
+  reminders        SentReminder[]
+
+  @@index([courseOfferingId, dueAt])
+}
+
+// Records that a reminder for a given deadline was actually dispatched to
+// a given user -- this is what stops the scheduler from re-sending the
+// same reminder every time its cron tick runs, AND it's the first piece of
+// the measurability story: "reminders sent" is a real, countable event,
+// not a claim.
+model SentReminder {
+  id         String   @id @default(uuid())
+  deadlineId String
+  deadline   Deadline @relation(fields: [deadlineId], references: [id])
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  sentAt     DateTime @default(now())
+
+  @@unique([deadlineId, userId])
+}
+
+// ---------------------------------------------------------------------------
+// MEASURABILITY: read receipts
+// An investor asking "is this actually being used, and is usage growing"
+// needs real events to point to, not a claim. This is deliberately the
+// simplest possible unit of engagement data -- "did this user's client
+// fetch/open this specific announcement" -- because collecting it from
+// day one is what makes a growth curve possible to draw later. You cannot
+// retroactively generate historical engagement data once you decide you
+// want it; the only mistake worse than an imperfect analytics event is
+// not capturing one at all.
+// ---------------------------------------------------------------------------
+model AnnouncementReadReceipt {
+  id             String   @id @default(uuid())
+  announcementId String
+  announcement   Announcement @relation(fields: [announcementId], references: [id])
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  readAt         DateTime @default(now())
+
+  @@unique([announcementId, userId])
+  @@index([announcementId])
+}
+
+// ---------------------------------------------------------------------------
+// SESSIONS / DEVICE TRACKING (privileged-account abuse mitigation)
+// ---------------------------------------------------------------------------
+model Session {
+  id           String    @id @default(uuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  deviceName   String?
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime  @default(now())
+  lastActiveAt DateTime  @default(now())
+  revokedAt    DateTime?
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// AUDIT LOG -- every privileged action, no exceptions
+// ---------------------------------------------------------------------------
+model AuditLog {
+  id        String   @id @default(uuid())
+  actorId   String
+  actor     User     @relation("AuditActor", fields: [actorId], references: [id])
+  action    String
+  targetId  String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  // Same hash-chain treatment as Announcement, and for the same reason:
+  // the audit log exists specifically to hold privileged actors
+  // accountable, which is meaningless if the log itself can be quietly
+  // rewritten by someone with database access. Chained per university
+  // (not one global chain) so different universities' logs are
+  // independently verifiable and a very active university doesn't force a
+  // full rescan of another university's history to check its own.
+  universityId String
+  university   University @relation(fields: [universityId], references: [id])
+  sequence     Int
+  previousHash String
+  contentHash  String   @unique
+
+  @@unique([universityId, sequence])
+  @@index([actorId, createdAt])
+}
