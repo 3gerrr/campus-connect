@@ -224,6 +224,7 @@ model User {
   deadlinesCreated  Deadline[] @relation("DeadlineCreatedBy")
   remindersReceived SentReminder[]
   readReceipts      AnnouncementReadReceipt[]
+  pushTokens        PushToken[]
 
   @@index([universityId])
 }
@@ -488,6 +489,31 @@ model Session {
   createdAt    DateTime  @default(now())
   lastActiveAt DateTime  @default(now())
   revokedAt    DateTime?
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// PUSH TOKENS -- Expo Push Service device registrations. expoPushToken is
+// globally unique (not per-user) because a physical device's token is
+// stable across logins; registration is an upsert keyed on the token
+// itself, reassigning userId if the same device later logs in as someone
+// else. Soft-revoked (revokedAt) on logout or a DeviceNotRegistered receipt
+// from Expo, never hard-deleted -- same pattern as Session.
+// ---------------------------------------------------------------------------
+model PushToken {
+  id                  String    @id @default(uuid())
+  userId              String
+  user                User      @relation(fields: [userId], references: [id])
+  expoPushToken       String    @unique
+  platform            String?
+  deviceName          String?
+  createdAt           DateTime  @default(now())
+  lastSeenAt          DateTime  @default(now())
+  revokedAt           DateTime?
+  lastTicketId        String?
+  lastTicketSentAt    DateTime?
+  lastTicketCheckedAt DateTime?
 
   @@index([userId])
 }
