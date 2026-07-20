@@ -24,7 +24,22 @@
     },
     "android": {
       "package": "com.yourorg.campusconnect",
-      "permissions": ["CAMERA", "USE_BIOMETRIC", "USE_FINGERPRINT", "POST_NOTIFICATIONS"]
-    }
+      "permissions": [
+        "CAMERA",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "POST_NOTIFICATIONS",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
+    },
+    "extra": {
+      "eas": {
+        "projectId": "a5f85029-de5c-42d3-87a8-eb2f461e2762"
+      }
+    },
+    "owner": "3gerr"
   }
 }
