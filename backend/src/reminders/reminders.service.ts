@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { AnnouncementCategory } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { NotificationPreferencesService } from '../notification-preferences/notification-preferences.service';
+import { ExpoPushService } from '../push/expo-push.service';
 
 // How far ahead the query looks for candidate deadlines each tick. Must be
 // comfortably larger than the longest reminder lead time anyone could have
@@ -24,6 +26,7 @@ export class RemindersService {
     private prisma: PrismaService,
     private realtimeGateway: RealtimeGateway,
     private notificationPreferencesService: NotificationPreferencesService,
+    private expoPushService: ExpoPushService,
   ) {}
 
   @Cron(CronExpression.EVERY_5_MINUTES)
@@ -47,6 +50,20 @@ export class RemindersService {
     });
 
     let sentCount = 0;
+    // Accumulated across the whole tick and sent as one batch at the end,
+    // rather than one Expo API call per student -- LOOKAHEAD_HOURS=26 can
+    // surface hundreds of candidates on a busy tick.
+    const pushBatch: {
+      userId: string;
+      deadline: {
+        id: string;
+        title: string;
+        category: AnnouncementCategory;
+        dueAt: Date;
+        courseCode: string;
+        courseOfferingId: string;
+      };
+    }[] = [];
 
     for (const deadline of candidates) {
       for (const enrollment of deadline.courseOffering.enrollments) {
@@ -92,8 +109,26 @@ export class RemindersService {
           courseCode: deadline.courseOffering.course.code,
         });
 
+        pushBatch.push({
+          userId: student.id,
+          deadline: {
+            id: deadline.id,
+            title: deadline.title,
+            category: deadline.category,
+            dueAt: deadline.dueAt,
+            courseCode: deadline.courseOffering.course.code,
+            courseOfferingId: deadline.courseOfferingId,
+          },
+        });
+
         sentCount++;
       }
+    }
+
+    if (pushBatch.length > 0) {
+      await this.expoPushService
+        .sendReminderBatch(pushBatch)
+        .catch((err) => this.logger.error('push batch send failed for this tick', err));
     }
 
     if (sentCount > 0) {

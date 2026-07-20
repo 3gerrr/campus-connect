@@ -85,11 +85,15 @@ export class AuthService {
 
     // Track the device/IP for this login -- feeds the "log out everywhere"
     // capability and gives admins visibility into privileged-account access.
-    await this.sessionsService.recordLogin(user.id, deviceName, ipAddress, userAgent);
+    // The created row's id is returned to the client so it can later target
+    // a revoke at exactly this device's session (see SessionsController),
+    // not just "log out everywhere".
+    const session = await this.sessionsService.recordLogin(user.id, deviceName, ipAddress, userAgent);
 
     return {
       accessToken: this.jwtService.sign(payload, { expiresIn: '15m' }),
       refreshToken: this.jwtService.sign(payload, { expiresIn: '30d' }),
+      sessionId: session.id,
       user: {
         id: user.id,
         name: user.name,

@@ -1,8 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { AuditLogService } from '../audit-logs/audit-logs.service';
 import { EnrollmentService } from '../enrollment/enrollment.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { ExpoPushService } from '../push/expo-push.service';
 import { genesisHash, computeAnnouncementHash } from './hash-chain.util';
 import {
   merkleRoot,
@@ -21,11 +22,14 @@ interface AttachmentInput {
 
 @Injectable()
 export class AnnouncementsService {
+  private readonly logger = new Logger(AnnouncementsService.name);
+
   constructor(
     private prisma: PrismaService,
     private auditLog: AuditLogService,
     private enrollmentService: EnrollmentService,
     private realtimeGateway: RealtimeGateway,
+    private expoPushService: ExpoPushService,
   ) {}
 
   /**
@@ -129,6 +133,16 @@ export class AnnouncementsService {
     // is purely a notification path -- it doesn't grant anyone access who
     // wasn't already allowed to subscribe (see RealtimeGateway.handleSubscribe).
     this.realtimeGateway.emitNewAnnouncement(courseOfferingId, announcement);
+
+    // Fire-and-forget: a slow or failing Expo API call must never delay or
+    // fail the post() response, matching the same tolerance-for-loss
+    // already implicit in the unawaited socket emit above.
+    this.expoPushService
+      .notifyAnnouncementPosted(
+        { id: announcement.id, category: announcement.category, courseOfferingId },
+        senderId,
+      )
+      .catch((err) => this.logger.error(`push notify failed for announcement ${announcement.id}`, err));
 
     return announcement;
   }

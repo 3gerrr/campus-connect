@@ -59,6 +59,23 @@ export class EnrollmentService {
     });
   }
 
+  // Used by ExpoPushService to fan out a new announcement's push to
+  // everyone currently enrolled, excluding the person who just posted it.
+  async listStudentIdsForOffering(
+    courseOfferingId: string,
+    excludeUserId?: string,
+  ): Promise<string[]> {
+    const rows = await this.prisma.enrollment.findMany({
+      where: {
+        courseOfferingId,
+        status: EnrollmentStatus.ENROLLED,
+        studentId: excludeUserId ? { not: excludeUserId } : undefined,
+      },
+      select: { studentId: true },
+    });
+    return rows.map((r) => r.studentId);
+  }
+
   /**
    * The core check: is this user allowed to see this course offering's feed?
    * True for an ENROLLED student, the offering's lecturer, an approved

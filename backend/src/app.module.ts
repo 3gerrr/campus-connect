@@ -16,6 +16,7 @@ import { DeadlinesModule } from './deadlines/deadlines.module';
 import { RemindersModule } from './reminders/reminders.module';
 import { NotificationPreferencesModule } from './notification-preferences/notification-preferences.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { PushModule } from './push/push.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
     RemindersModule,
     NotificationPreferencesModule,
     AnalyticsModule,
+    PushModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
