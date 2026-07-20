@@ -113,6 +113,17 @@ export class AdminService {
     const updated = await this.prisma.user.update({
       where: { id: lecturerId },
       data: { verified: true, verifiedById: adminId, verifiedAt: new Date() },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        universityId: true,
+        verified: true,
+        verifiedById: true,
+        verifiedAt: true,
+        createdAt: true,
+      },
     });
 
     await this.auditLog.record(adminId, 'LECTURER_VERIFIED', lecturerId, {});

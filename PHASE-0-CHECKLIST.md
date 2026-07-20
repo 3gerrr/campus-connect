@@ -113,6 +113,43 @@ Watch the module initialization log. Likely failure points:
   can succeed while the app still can't see the vars — don't let that
   mislead you).
 
+## Phase 0.5 — Follow-ups found during Step 7 curl testing
+
+- [x] **Redact `passwordHash` from every endpoint response.**
+      `PATCH /admin/lecturers/:id/verify` was returning the full Prisma
+      `User` row — including `passwordHash` — because its `update()` call
+      had no `select`. Audited every other `prisma.user.*` call in
+      `backend/src` for the same gap (`admin.service.ts`,
+      `auth.service.ts`, `notification-preferences.service.ts`,
+      `analytics.service.ts`); those already used `select` or hand-built
+      response objects. Fixed by adding an explicit `select` (id, name,
+      email, role, universityId, verified, verifiedById, verifiedAt,
+      createdAt — everything except `passwordHash`) to `verifyLecturer` in
+      `admin.service.ts`, matching the pattern `listPendingLecturers`
+      already used. Confirmed fixed live via curl against a fresh lecturer
+      signup.
+
+- [ ] **Create DTO classes so `ValidationPipe` actually validates.**
+      `main.ts` registers a global `ValidationPipe({ whitelist: true, transform: true })`,
+      but every controller currently types `@Body()` as an inline object
+      literal (e.g. `@Body() body: { email: string; password: string }`)
+      instead of a real class decorated with `class-validator` decorators.
+      `ValidationPipe` only validates when the target is an actual class it
+      can run `class-validator` against — an inline TS type is erased at
+      runtime and silently skipped, so malformed/missing fields pass
+      straight through to the service layer instead of failing fast with a
+      400. We only noticed because `POST /auth/login` with an empty body
+      500'd (Prisma choking on `undefined` inside `auth.service.ts`)
+      instead of returning a clean validation error.
+
+      Fix: add a `dto/` folder per module with real classes (e.g.
+      `LoginDto`, `SignupDto`, `CreateAnnouncementDto`, ...) using
+      `class-validator` decorators (`@IsEmail()`, `@IsString()`,
+      `@IsEnum()`, `@IsOptional()`, etc.), and swap every inline
+      `@Body() body: { ... }` for `@Body() body: SomeDto`. Do this before
+      Phase 1 — it's a correctness gap (bad input reaching
+      services/Prisma as raw 500s instead of 400s), not a style nit.
+
 ## Step 7 — Prove every route with curl (the real checkpoint)
 
 Follow README Section 5 in order. Minimum path to validate the core loop:
