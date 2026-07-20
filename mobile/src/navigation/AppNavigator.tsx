@@ -2,6 +2,7 @@ import React from 'react';
 import { Text } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { navigationRef } from './navigationRef';
 import { useAuth } from '../context/AuthContext';
 import { useGlobalReminders } from '../hooks/useGlobalReminders';
 import LoginScreen from '../screens/LoginScreen';
@@ -84,7 +85,7 @@ export default function AppNavigator() {
   if (loading) return null; // could render a splash screen here
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator>
         {user ? (
           user.role === 'LECTURER' ? (

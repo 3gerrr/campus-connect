@@ -3,6 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { api } from '../services/api';
 import { disconnectSocket } from '../services/socket';
+import { registerPushTokenWithBackend, unregisterPushTokenWithBackend } from '../services/push';
 
 type User = { id: string; name: string; email: string; role: string };
 
@@ -34,8 +35,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data } = await api.post('/auth/login', { email, password });
     await SecureStore.setItemAsync('accessToken', data.accessToken);
     await SecureStore.setItemAsync('refreshToken', data.refreshToken);
+    await SecureStore.setItemAsync('sessionId', data.sessionId);
     await SecureStore.setItemAsync('user', JSON.stringify(data.user));
     setUser(data.user);
+    // Fire-and-forget -- login's perceived latency shouldn't depend on
+    // Expo/notification-permission UI.
+    registerPushTokenWithBackend().catch(() => {});
   };
 
   // Once a user has logged in with password once, allow Face ID/fingerprint
@@ -53,6 +58,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const storedUser = await SecureStore.getItemAsync('user');
       if (storedUser) {
         setUser(JSON.parse(storedUser));
+        // A user who always unlocks biometrically never calls login()
+        // otherwise, so this is the only place their push token ever gets
+        // (re)registered. Fire-and-forget, same as login() -- must not
+        // block or fail the offline unlock itself.
+        registerPushTokenWithBackend().catch(() => {});
         return true;
       }
     }
@@ -77,8 +87,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
+    await unregisterPushTokenWithBackend();
+
+    // Best-effort revoke of this device's own session server-side --
+    // otherwise a shared/lost device stays logged in server-side
+    // indefinitely even after the app clears its local tokens.
+    try {
+      const sessionId = await SecureStore.getItemAsync('sessionId');
+      if (sessionId) {
+        await api.delete(`/sessions/${sessionId}`);
+      }
+    } catch {
+      // Offline logout -- session stays valid server-side until it expires
+      // or is revoked from another device via /sessions/revoke-all.
+    }
+
     await SecureStore.deleteItemAsync('accessToken');
     await SecureStore.deleteItemAsync('refreshToken');
+    await SecureStore.deleteItemAsync('sessionId');
     await SecureStore.deleteItemAsync('user');
     disconnectSocket();
     setUser(null);
