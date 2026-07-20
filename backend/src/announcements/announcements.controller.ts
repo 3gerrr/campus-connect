@@ -4,6 +4,7 @@ import { Throttle } from '@nestjs/throttler';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../common/enums/role.enum';
+import { AuthenticatedRequest } from '../auth/types/authenticated-request';
 import { AnnouncementsService } from './announcements.service';
 import { AnnouncementCategory } from '@prisma/client';
 
@@ -18,7 +19,7 @@ export class AnnouncementsController {
   // account from flooding a course feed. Tune per deployment.
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   post(
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
     @Body()
     body: {
       courseOfferingId: string;
@@ -41,13 +42,13 @@ export class AnnouncementsController {
 
   @Post(':id/correction')
   @Roles(Role.LECTURER, Role.STUDENT, Role.UNIVERSITY_ADMIN)
-  correct(@Req() req, @Param('id') id: string, @Body() body: { content: string }) {
+  correct(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() body: { content: string }) {
     return this.announcementsService.postCorrection(req.user.id, req.user.role, id, body.content);
   }
 
   @Post(':id/share')
   @Roles(Role.STUDENT, Role.LECTURER)
-  share(@Req() req, @Param('id') id: string) {
+  share(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.announcementsService.share(req.user.id, id);
   }
 
@@ -55,12 +56,12 @@ export class AnnouncementsController {
   // -- no extra role restriction beyond already having legitimate access
   // to see it in the first place (enforced by the underlying feed read).
   @Post(':id/read')
-  markAsRead(@Req() req, @Param('id') id: string) {
+  markAsRead(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.announcementsService.markAsRead(req.user.id, id);
   }
 
   @Get('offering/:courseOfferingId')
-  list(@Req() req, @Param('courseOfferingId') courseOfferingId: string) {
+  list(@Req() req: AuthenticatedRequest, @Param('courseOfferingId') courseOfferingId: string) {
     return this.announcementsService.listForOffering(req.user.id, req.user.role, courseOfferingId);
   }
 
@@ -69,7 +70,7 @@ export class AnnouncementsController {
   // AnnouncementsService.verifyChain for why the whole chain is rechecked
   // rather than trusting a cached "last known good" state.
   @Get('offering/:courseOfferingId/verify')
-  verify(@Req() req, @Param('courseOfferingId') courseOfferingId: string) {
+  verify(@Req() req: AuthenticatedRequest, @Param('courseOfferingId') courseOfferingId: string) {
     return this.announcementsService.verifyChain(req.user.id, req.user.role, courseOfferingId);
   }
 
@@ -77,7 +78,7 @@ export class AnnouncementsController {
   // course's history -- see AnnouncementsService.getInclusionProof.
   @Get('offering/:courseOfferingId/inclusion-proof/:announcementId')
   inclusionProof(
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
     @Param('courseOfferingId') courseOfferingId: string,
     @Param('announcementId') announcementId: string,
   ) {
@@ -93,7 +94,7 @@ export class AnnouncementsController {
   // size -- see AnnouncementsService.getConsistencyProof.
   @Get('offering/:courseOfferingId/consistency-proof')
   consistencyProof(
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
     @Param('courseOfferingId') courseOfferingId: string,
     @Query('oldSize') oldSize: string,
   ) {

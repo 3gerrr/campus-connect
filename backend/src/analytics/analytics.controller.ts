@@ -3,6 +3,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../common/enums/role.enum';
+import { AuthenticatedRequest } from '../auth/types/authenticated-request';
 import { AnalyticsService } from './analytics.service';
 
 @Controller('admin/analytics')
@@ -17,7 +18,7 @@ export class AnalyticsController {
   // platform-wide numbers with ?scope=platform; without it, they see their
   // own university's numbers too, same as anyone else.
   @Get('overview')
-  overview(@Req() req, @Query('scope') scope?: string) {
+  overview(@Req() req: AuthenticatedRequest, @Query('scope') scope?: string) {
     const wantsPlatformWide = req.user.role === Role.SUPER_ADMIN && scope === 'platform';
     return this.analyticsService.getOverview(wantsPlatformWide ? null : req.user.universityId);
   }

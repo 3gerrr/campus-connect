@@ -44,9 +44,20 @@ JS and API-compatible for this use.)
 ## Step 3 — Database up
 
 ```bash
-docker run --name campus-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 -d postgres
+docker run --name campus-pg -e POSTGRES_PASSWORD=postgres -p 5433:5432 -d postgres
 docker ps    # confirm campus-pg is running
 ```
+
+Port **5433** (not the default 5432) — some teammates' laptops have a native
+PostgreSQL install (e.g. a Windows `postgresql-x64-*` service) already bound
+to 5432, and Docker Desktop will silently let both listeners coexist on
+`localhost`, so requests round-robin unpredictably between the real Docker
+container and the stray native instance depending on IPv4/IPv6 resolution.
+This is nasty to debug (migrations appear to randomly "forget" state) so we
+standardized on 5433 for everyone rather than asking people to find and stop
+the conflicting service. If `docker ps` shows campus-pg healthy but you still
+see weird state, check `netstat -ano | findstr 5432` (Windows) for a second
+listener before assuming Docker is broken.
 
 After any laptop restart: `docker start campus-pg`.
 
@@ -60,7 +71,7 @@ cp .env.example .env
 Edit `.env`:
 
 ```
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/campus_connect"
+DATABASE_URL="postgresql://postgres:postgres@localhost:5433/campus_connect"
 JWT_SECRET="<mash keyboard, 40+ chars>"
 ```
 

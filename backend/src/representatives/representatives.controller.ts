@@ -3,6 +3,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../common/enums/role.enum';
+import { AuthenticatedRequest } from '../auth/types/authenticated-request';
 import { RepresentativesService } from './representatives.service';
 import { RepresentativeType } from '@prisma/client';
 
@@ -14,7 +15,7 @@ export class RepresentativesController {
   @Post('apply')
   @Roles(Role.STUDENT)
   apply(
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
     @Body()
     body: {
       courseOfferingId: string;
@@ -34,13 +35,13 @@ export class RepresentativesController {
 
   @Patch(':id/decision')
   @Roles(Role.LECTURER)
-  decide(@Req() req, @Param('id') id: string, @Body() body: { approve: boolean }) {
+  decide(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() body: { approve: boolean }) {
     return this.repsService.decide(id, req.user.id, body.approve);
   }
 
   @Patch(':id/revoke')
   @Roles(Role.LECTURER)
-  revoke(@Req() req, @Param('id') id: string) {
+  revoke(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.repsService.revoke(id, req.user.id);
   }
 
@@ -49,7 +50,7 @@ export class RepresentativesController {
   // just gated by account type here.
   @Get('offering/:courseOfferingId')
   @Roles(Role.LECTURER, Role.UNIVERSITY_ADMIN, Role.SUPER_ADMIN)
-  listForOffering(@Req() req, @Param('courseOfferingId') courseOfferingId: string) {
+  listForOffering(@Req() req: AuthenticatedRequest, @Param('courseOfferingId') courseOfferingId: string) {
     return this.repsService.listForOffering(courseOfferingId, req.user.id, req.user.role);
   }
 
@@ -57,7 +58,7 @@ export class RepresentativesController {
   // never applied, rather than a 404, so the app can render "not applied yet".
   @Get('mine/:courseOfferingId')
   @Roles(Role.STUDENT)
-  getMine(@Req() req, @Param('courseOfferingId') courseOfferingId: string) {
+  getMine(@Req() req: AuthenticatedRequest, @Param('courseOfferingId') courseOfferingId: string) {
     return this.repsService.getMyApplication(req.user.id, courseOfferingId);
   }
 }

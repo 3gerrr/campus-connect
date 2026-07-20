@@ -56,7 +56,12 @@ Key invariants — do not break these:
   every route via curl. See PHASE-0-CHECKLIST.md. Known pre-found issues:
   `class-validator`/`class-transformer` missing from package.json (needed by
   the global ValidationPipe in main.ts); `@types/passport-jwt` missing;
-  `.env` is not auto-loaded (no @nestjs/config or dotenv in deps).
+  `.env` is not auto-loaded (no @nestjs/config or dotenv in deps). Local
+  Postgres runs in Docker on **port 5433**, not the default 5432 — some
+  teammates' machines have a native PostgreSQL service already bound to
+  5432, and it silently coexists with Docker's listener instead of erroring,
+  so `localhost:5432` connections land on whichever one wins IPv4/IPv6
+  resolution. `DATABASE_URL` in `.env` must use 5433 to match.
 - **Phase 1:** push notifications to CLOSED apps via **Expo Push Service**
   (not raw FCM/APNs — we are on Expo managed workflow). Store Expo push
   tokens per device/session; send on announcement create + reminder dispatch.

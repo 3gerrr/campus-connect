@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { genesisHash, chainHash, canonicalJSON } from '../common/hash-chain';
 import { merkleRoot, inclusionProof, consistencyProof, toHex, fromHex } from '../common/merkle-tree';
@@ -75,7 +76,7 @@ export class AuditLogService {
           actorId,
           action,
           targetId,
-          metadata,
+          metadata: metadata as Prisma.InputJsonValue | undefined,
           createdAt,
           universityId,
           sequence,

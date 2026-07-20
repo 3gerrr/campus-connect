@@ -3,6 +3,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../common/enums/role.enum';
+import { AuthenticatedRequest } from '../auth/types/authenticated-request';
 import { AuditLogService } from './audit-logs.service';
 
 // Previously the audit log could only be WRITTEN to (every service calls
@@ -15,7 +16,7 @@ export class AuditLogsController {
   constructor(private auditLogService: AuditLogService) {}
 
   @Get()
-  list(@Req() req, @Query('limit') limit?: string) {
+  list(@Req() req: AuthenticatedRequest, @Query('limit') limit?: string) {
     return this.auditLogService.listForUniversity(
       req.user.universityId,
       limit ? parseInt(limit, 10) : undefined,
@@ -23,17 +24,17 @@ export class AuditLogsController {
   }
 
   @Get('verify')
-  verify(@Req() req) {
+  verify(@Req() req: AuthenticatedRequest) {
     return this.auditLogService.verifyChain(req.user.universityId);
   }
 
   @Get('inclusion-proof/:auditLogId')
-  inclusionProof(@Req() req, @Param('auditLogId') auditLogId: string) {
+  inclusionProof(@Req() req: AuthenticatedRequest, @Param('auditLogId') auditLogId: string) {
     return this.auditLogService.getInclusionProof(req.user.universityId, auditLogId);
   }
 
   @Get('consistency-proof')
-  consistencyProof(@Req() req, @Query('oldSize') oldSize: string) {
+  consistencyProof(@Req() req: AuthenticatedRequest, @Query('oldSize') oldSize: string) {
     return this.auditLogService.getConsistencyProof(req.user.universityId, parseInt(oldSize, 10));
   }
 }
