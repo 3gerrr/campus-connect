@@ -13,8 +13,13 @@
           "icon": "./assets/notification-icon.png",
           "color": "#E4002B"
         }
-      ]
+      ],
+      "expo-splash-screen"
     ],
+    "splash": {
+      "backgroundColor": "#ffffff",
+      "resizeMode": "contain"
+    },
     "ios": {
       "bundleIdentifier": "com.yourorg.campusconnect",
       "infoPlist": {

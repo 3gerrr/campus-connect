@@ -2,5 +2,7 @@ node_modules/
 .env
 dist/
 .expo/
+mobile/android/
+mobile/ios/
 
 .claude/
