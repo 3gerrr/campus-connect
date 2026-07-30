@@ -44,6 +44,22 @@ JS and API-compatible for this use.)
 ## Step 3 — Database up
 
 ```bash
+./dev-up.ps1          # Windows/PowerShell, from repo root
+# or
+npm run dev:up         # cross-platform, from backend/
+```
+
+Either one checks that Docker is actually reachable (prints "Open Docker
+Desktop first" and exits if not), creates `campus-pg` on port 5433 if it
+doesn't exist yet, starts it if it's stopped, waits until Postgres accepts
+connections, then prints `ready — run: cd backend; npm run start:dev`.
+Read-only beyond starting the container — no resets, no migrations, no data
+changes.
+
+Equivalent manual commands, if you'd rather run them yourself or the script
+doesn't work on your setup:
+
+```bash
 docker run --name campus-pg -e POSTGRES_PASSWORD=postgres -p 5433:5432 -d postgres
 docker ps    # confirm campus-pg is running
 ```
@@ -59,7 +75,8 @@ the conflicting service. If `docker ps` shows campus-pg healthy but you still
 see weird state, check `netstat -ano | findstr 5432` (Windows) for a second
 listener before assuming Docker is broken.
 
-After any laptop restart: `docker start campus-pg`.
+After any laptop restart: `./dev-up.ps1` (or `npm run dev:up`) → `cd backend;
+npm run start:dev`. That's the whole routine now.
 
 ## Step 4 — Configure environment
 

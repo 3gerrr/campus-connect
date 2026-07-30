@@ -61,7 +61,11 @@ Key invariants — do not break these:
   teammates' machines have a native PostgreSQL service already bound to
   5432, and it silently coexists with Docker's listener instead of erroring,
   so `localhost:5432` connections land on whichever one wins IPv4/IPv6
-  resolution. `DATABASE_URL` in `.env` must use 5433 to match.
+  resolution. `DATABASE_URL` in `.env` must use 5433 to match. After a
+  restart, the routine is just `./dev-up.ps1` (or `npm run dev:up` from
+  `backend/`) → `npm run start:dev` — the script checks Docker Desktop is
+  running, starts/creates `campus-pg` on 5433, and waits for Postgres to
+  accept connections before saying so. See PHASE-0-CHECKLIST.md Step 3.
 - **Phase 1:** push notifications to CLOSED apps via **Expo Push Service**
   (not raw FCM/APNs — we are on Expo managed workflow). Store Expo push
   tokens per device/session; send on announcement create + reminder dispatch.

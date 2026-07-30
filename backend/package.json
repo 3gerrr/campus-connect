@@ -5,6 +5,7 @@
     "node": "20.x"
   },
   "scripts": {
+    "dev:up": "node scripts/dev-up.js",
     "start:dev": "nest start --watch",
     "build": "nest build",
     "start:prod": "node dist/main",

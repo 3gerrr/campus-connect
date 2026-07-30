@@ -6,3 +6,5 @@ mobile/android/
 mobile/ios/
 
 .claude/
+
+backend/scripts/.seed-futa-is-manifest.json
