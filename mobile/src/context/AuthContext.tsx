@@ -33,10 +33,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (email: string, password: string) => {
     const { data } = await api.post('/auth/login', { email, password });
-    await SecureStore.setItemAsync('accessToken', data.accessToken);
-    await SecureStore.setItemAsync('refreshToken', data.refreshToken);
-    await SecureStore.setItemAsync('sessionId', data.sessionId);
-    await SecureStore.setItemAsync('user', JSON.stringify(data.user));
+    await Promise.all([
+      SecureStore.setItemAsync('accessToken', data.accessToken),
+      SecureStore.setItemAsync('refreshToken', data.refreshToken),
+      SecureStore.setItemAsync('sessionId', data.sessionId),
+      SecureStore.setItemAsync('user', JSON.stringify(data.user)),
+    ]);
     setUser(data.user);
     // Fire-and-forget -- login's perceived latency shouldn't depend on
     // Expo/notification-permission UI.
@@ -87,27 +89,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
-    await unregisterPushTokenWithBackend();
+    // Read before clearing -- the fire-and-forget session revoke below
+    // still needs this, but SecureStore's own copy is about to go away.
+    const sessionId = await SecureStore.getItemAsync('sessionId');
 
-    // Best-effort revoke of this device's own session server-side --
-    // otherwise a shared/lost device stays logged in server-side
-    // indefinitely even after the app clears its local tokens.
-    try {
-      const sessionId = await SecureStore.getItemAsync('sessionId');
-      if (sessionId) {
-        await api.delete(`/sessions/${sessionId}`);
-      }
-    } catch {
-      // Offline logout -- session stays valid server-side until it expires
-      // or is revoked from another device via /sessions/revoke-all.
-    }
-
+    // Critical path: local auth state only. Fast (on-device) and security-
+    // sensitive, so this is the only part logout() actually waits on --
+    // the caller sees `user` go null and navigates to Login immediately.
     await SecureStore.deleteItemAsync('accessToken');
     await SecureStore.deleteItemAsync('refreshToken');
     await SecureStore.deleteItemAsync('sessionId');
     await SecureStore.deleteItemAsync('user');
     disconnectSocket();
     setUser(null);
+
+    // Fire-and-forget -- logout must feel instant, same tolerance-for-loss
+    // as ExpoPushService.notifyAnnouncementPosted on the backend. Worst
+    // case on failure: the push token stays registered until reclaimed by
+    // a future login elsewhere, or (offline logout) the session stays
+    // valid server-side until it expires or is revoked from another
+    // device via /sessions/revoke-all -- neither blocks this device's UI.
+    unregisterPushTokenWithBackend().catch(() => {});
+    if (sessionId) {
+      api.delete(`/sessions/${sessionId}`).catch(() => {});
+    }
   };
 
   return (
