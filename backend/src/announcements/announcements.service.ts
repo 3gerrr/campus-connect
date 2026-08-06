@@ -20,6 +20,11 @@ interface AttachmentInput {
   fileType: string;
 }
 
+// Bounded wait for notifyAnnouncementPosted() below -- Expo's /push/send is
+// normally sub-second, so this rarely triggers; it exists to cap worst case
+// if Expo itself is slow, not to accommodate a normally-slow call.
+const PUSH_NOTIFY_TIMEOUT_MS = 3000;
+
 @Injectable()
 export class AnnouncementsService {
   private readonly logger = new Logger(AnnouncementsService.name);
@@ -134,15 +139,22 @@ export class AnnouncementsService {
     // wasn't already allowed to subscribe (see RealtimeGateway.handleSubscribe).
     this.realtimeGateway.emitNewAnnouncement(courseOfferingId, announcement);
 
-    // Fire-and-forget: a slow or failing Expo API call must never delay or
-    // fail the post() response, matching the same tolerance-for-loss
-    // already implicit in the unawaited socket emit above.
-    this.expoPushService
-      .notifyAnnouncementPosted(
-        { id: announcement.id, category: announcement.category, courseOfferingId },
-        senderId,
-      )
-      .catch((err) => this.logger.error(`push notify failed for announcement ${announcement.id}`, err));
+    // Bounded await, not fire-and-forget: on free-tier hosting the process
+    // can suspend right after the HTTP response is sent, killing an
+    // unawaited promise before its Expo call ever completes -- confirmed via
+    // Render logs showing PushModule cold starts immediately preceding posts
+    // whose PushToken.lastTicketId never got set. Racing against a timeout
+    // gives the real call a chance to finish (Expo's /push/send is normally
+    // sub-second) while still capping worst-case added latency.
+    await Promise.race([
+      this.expoPushService
+        .notifyAnnouncementPosted(
+          { id: announcement.id, category: announcement.category, courseOfferingId },
+          senderId,
+        )
+        .catch((err) => this.logger.error(`push notify failed for announcement ${announcement.id}`, err)),
+      new Promise((resolve) => setTimeout(resolve, PUSH_NOTIFY_TIMEOUT_MS)),
+    ]);
 
     return announcement;
   }

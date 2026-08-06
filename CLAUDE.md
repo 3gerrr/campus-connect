@@ -71,6 +71,14 @@ Key invariants — do not break these:
   tokens per device/session; send on announcement create + reminder dispatch.
 - **Phase 2:** NotificationPreference read/write routes + mobile settings
   screen (table already exists in schema).
+- **Phase 2.5:** admin-only debug endpoint to read back a `PushToken`'s
+  `lastTicketId` / `lastTicketSentAt` / `lastTicketCheckedAt` / `revokedAt`.
+  Currently nothing in the API exposes this — diagnosing a delivery failure
+  means a direct DB query. Surfaced 2026-08-05 while diagnosing why
+  `notifyAnnouncementPosted()`'s fire-and-forget Expo call wasn't producing
+  tickets on Render's free tier (dyno cold-starts were killing the unawaited
+  promise mid-flight; fixed by racing it against a bounded timeout instead —
+  see `announcements.service.ts`).
 - **Phase 3:** minimal admin path good enough for a one-department pilot.
 - Later: SMS/WhatsApp fallback for CANCELLATION/VENUE_CHANGE categories,
   analytics dashboard on read receipts, Merkle checkpointing.
